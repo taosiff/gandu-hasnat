@@ -1,0 +1,9 @@
+{
+    "name": "danda-maro-game",
+    "version": "1.0.0",
+    "description": "DANDA MARO - A hilarious election chase game! Hit the running neta with your bamboo!",
+    "scripts": {
+        "start": "npx serve .",
+        "dev": "npx serve ."
+    }
+}
