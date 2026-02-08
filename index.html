@@ -147,7 +147,7 @@
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const dpr = window.devicePixelRatio || 1;
+const dpr = Math.min(window.devicePixelRatio || 1, 1.5); // Cap at 1.5x for mobile perf
 
 function resizeCanvas() {
     canvas.width = window.innerWidth * dpr;
@@ -309,7 +309,7 @@ function handleHit(e) {
 
         // Particles
         const rx = runnerPct * W(), ry = groundY() - S(60);
-        for(let i=0;i<30;i++) hitParticles.push({
+        for(let i=0;i<12;i++) hitParticles.push({
             x:rx, y:ry, vx:(Math.random()-0.5)*10, vy:-Math.random()*8-2,
             life:1, color:['#FFD700','#F42A41','#006A4E','#FFF','#FF6B35'][Math.floor(Math.random()*5)],
             size:S(3)+Math.random()*S(5)
@@ -670,7 +670,7 @@ function drawRunnerCharacter() {
     ctx.restore();
 
     // Dust from feet
-    if(!runnerIsHit && Math.random()>0.5){
+    if(!runnerIsHit && Math.random()>0.85 && dustParticles.length<15){
         dustParticles.push({
             x: x-S(6)+Math.random()*S(12), y: gy+Math.random()*S(2),
             life:1, size:S(2)+Math.random()*S(2),
@@ -726,55 +726,51 @@ function drawSpeedBar(){
 // ===== UPDATE =====
 function update() {
     if(state!=='playing') return;
-    gameTime++;
-    gameSpeed = Math.min(3.5, 1 + gameTime * 0.0003); // Moderate ramp - gets tougher
+    gameTime += dt;
+    gameSpeed = Math.min(3.5, 1 + gameTime * 0.0003);
 
-    roadScroll += gameSpeed * 2.5;
-    bgScroll += gameSpeed * 0.3;
+    roadScroll += gameSpeed * 2.5 * dt;
+    bgScroll += gameSpeed * 0.3 * dt;
 
     // Clouds
-    clouds.forEach(c=>{ c.x-=c.spd*gameSpeed; if(c.x<-c.w) c.x=W()+c.w+Math.random()*60; });
+    clouds.forEach(c=>{ c.x-=c.spd*gameSpeed*dt; if(c.x<-c.w) c.x=W()+c.w+Math.random()*60; });
 
-    // ===== RUNNER OSCILLATION - CLEAR IN/OUT PATTERN =====
+    // ===== RUNNER OSCILLATION =====
     if(runnerIsHit){
-        // AFTER HIT: runner jumps far away and stays there
-        runnerHitTimer++;
-        // Push runner to far edge and keep him there for ~10 sec
+        runnerHitTimer += dt;
         if(runnerHitTimer < 420) {
-            // First 7 sec: stay at far edge
-            runnerPct += (RUNNER_FAR + 0.08 - runnerPct) * 0.12;
+            runnerPct += (RUNNER_FAR + 0.08 - runnerPct) * 0.12 * dt;
         } else {
-            // Last 3 sec: slowly drift back towards range
-            const comeback = (runnerHitTimer - 420) / 180; // 0 to 1
+            const comeback = (runnerHitTimer - 420) / 180;
             const target = RUNNER_FAR + 0.08 - comeback * (RUNNER_FAR - RUNNER_CLOSE) * 0.5;
-            runnerPct += (target - runnerPct) * 0.05;
+            runnerPct += (target - runnerPct) * 0.05 * dt;
         }
         if(runnerHitTimer > 600){
             runnerIsHit=false; runnerHitTimer=0;
-            runnerPhase = Math.PI * 0.5; // Start from far position
+            runnerPhase = Math.PI * 0.5;
         }
     } else {
-        // Normal sine wave oscillation
-        runnerPhase += 0.022 * gameSpeed;
+        runnerPhase += 0.022 * gameSpeed * dt;
         const wave = Math.sin(runnerPhase);
         runnerPct = RUNNER_CLOSE + (RUNNER_FAR - RUNNER_CLOSE) * ((wave + 1) / 2);
     }
 
-    // Running bob
-    runnerBob += 0.2 * gameSpeed;
+    runnerBob += 0.2 * gameSpeed * dt;
 
     // Bamboo swing
     if(bambooSwing){
-        bambooTimer++;
+        bambooTimer += dt;
         if(bambooTimer>22){bambooSwing=false;bambooTimer=0;}
     }
-    if(celebrateTimer>0) celebrateTimer--;
+    if(celebrateTimer>0) celebrateTimer -= dt;
 
     // Particles
     dustParticles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life-=0.025;});
     dustParticles=dustParticles.filter(p=>p.life>0);
-    hitParticles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.15;p.life-=0.016;});
+    if(dustParticles.length>15) dustParticles.splice(0,dustParticles.length-15);
+    hitParticles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.15;p.life-=0.025;});
     hitParticles=hitParticles.filter(p=>p.life>0);
+    if(hitParticles.length>20) hitParticles.splice(0,hitParticles.length-20);
 
     // Shake
     if(shakeAmt>0){shakeX=(Math.random()-0.5)*shakeAmt*2;shakeY=(Math.random()-0.5)*shakeAmt*2;shakeAmt*=0.8;if(shakeAmt<0.3){shakeAmt=0;shakeX=0;shakeY=0;}}
@@ -792,8 +788,17 @@ function render() {
     ctx.restore();
 }
 
-// ===== LOOP =====
-function loop(){ update(); render(); requestAnimationFrame(loop); }
+// ===== LOOP (delta-time for consistent speed on slow phones) =====
+let lastTime = 0;
+let dt = 1; // delta multiplier (1 = 60fps, 2 = 30fps, etc)
+function loop(timestamp){
+    if(lastTime){
+        const elapsed = timestamp - lastTime;
+        dt = Math.min(elapsed / 16.67, 3); // normalize to 60fps, cap at 3x
+    }
+    lastTime = timestamp;
+    update(); render(); requestAnimationFrame(loop);
+}
 
 // ===== INIT =====
 function init(){
